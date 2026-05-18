@@ -1,58 +1,23 @@
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: user-account-service
-  labels:
-    app: user-account-service
-    version: "1.0.0"
-    managed-by: cloudbees-ci
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: user-account-service
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
-  template:
-    metadata:
-      labels:
-        app: user-account-service
-    spec:
-      containers:
-        - name: user-account-service
-          image: IMAGE_PLACEHOLDER          # Replaced by Jenkinsfile
-          imagePullPolicy: Always
-          ports:
-            - containerPort: 8080
-              name: http
-          env:
-            - name: SPRING_PROFILES_ACTIVE
-              value: "prod"
-            - name: SERVER_PORT
-              value: "8080"
-          resources:
-            requests:
-              memory: "256Mi"
-              cpu: "250m"
-            limits:
-              memory: "512Mi"
-              cpu: "500m"
-          livenessProbe:
-            httpGet:
-              path: /actuator/health/liveness
-              port: 8080
-            initialDelaySeconds: 30
-            periodSeconds: 15
-            failureThreshold: 3
-          readinessProbe:
-            httpGet:
-              path: /actuator/health/readiness
-              port: 8080
-            initialDelaySeconds: 20
-            periodSeconds: 10
-            failureThreshold: 3
-      imagePullSecrets:
-        - name: registry-secret
+name: Java CI
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Build with Maven
+        run: mvn clean install
