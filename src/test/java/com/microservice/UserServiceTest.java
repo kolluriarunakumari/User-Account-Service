@@ -32,7 +32,7 @@ class UserServiceTest {
         sampleUser = User.builder()
                 .userId("USR-10001")
                 .fullName("Alice Johnson")
-                .email("alice@example.com")
+                .email("alice222@example.com")
                 .status("ACTIVE")
                 .build();
     }
