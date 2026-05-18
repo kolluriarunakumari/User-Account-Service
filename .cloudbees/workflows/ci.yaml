@@ -1,0 +1,101 @@
+# ============================================================
+# CloudBees CI Configuration
+# Place this file at: .cloudbees/workflows/ci.yaml
+# ============================================================
+apiVersion: automation.cloudbees.io/v1alpha1
+kind: Workflow
+name: user-account-service-ci
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - 'feature/**'
+      - 'release/**'
+  pull_request:
+    branches:
+      - main
+
+env:
+  APP_NAME: user-account-service
+  JAVA_VERSION: "17"
+  MAVEN_OPTS: "-Xmx512m"
+
+jobs:
+  build-and-test:
+    steps:
+      - name: Checkout
+        uses: cloudbees-io/checkout@v1
+
+      - name: Set up JDK 17
+        uses: cloudbees-io/setup-java@v1
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+
+      - name: Cache Maven packages
+        uses: cloudbees-io/cache@v1
+        with:
+          path: ~/.m2/repository
+          key: maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: maven-
+
+      - name: Build with Maven
+        run: mvn clean compile -B --no-transfer-progress
+
+      - name: Run Unit Tests
+        run: mvn test -B --no-transfer-progress
+
+      - name: Package JAR
+        run: mvn package -DskipTests -B --no-transfer-progress
+
+      - name: Publish Test Results
+        uses: cloudbees-io/publish-junit-test-results@v1
+        with:
+          test-results: '**/target/surefire-reports/*.xml'
+
+      - name: Upload Artifact
+        uses: cloudbees-io/upload-artifact@v1
+        with:
+          name: ${{ env.APP_NAME }}-jar
+          path: target/*.jar
+
+  docker-build:
+    needs: build-and-test
+    if: ${{ cloudbees.ref == 'refs/heads/main' || cloudbees.ref == 'refs/heads/develop' }}
+    steps:
+      - name: Checkout
+        uses: cloudbees-io/checkout@v1
+
+      - name: Download Artifact
+        uses: cloudbees-io/download-artifact@v1
+        with:
+          name: ${{ env.APP_NAME }}-jar
+          path: target/
+
+      - name: Configure Docker
+        uses: cloudbees-io/configure-oci-credentials@v1
+        with:
+          registry: ${{ vars.DOCKER_REGISTRY }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and Push Docker Image
+        uses: cloudbees-io/kaniko@v1
+        with:
+          destination: ${{ vars.DOCKER_REGISTRY }}/${{ env.APP_NAME }}:${{ cloudbees.scm.sha }}
+          destination: ${{ vars.DOCKER_REGISTRY }}/${{ env.APP_NAME }}:latest
+          context: .
+          dockerfile: Dockerfile
+
+  deploy-staging:
+    needs: docker-build
+    environment: staging
+    steps:
+      - name: Deploy to Staging
+        uses: cloudbees-io/deploy-to-kubernetes@v1
+        with:
+          environment: staging
+          manifest: cicd/k8s/deployment.yaml
+          image-tag: ${{ cloudbees.scm.sha }}
